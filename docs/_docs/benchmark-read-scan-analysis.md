@@ -168,7 +168,7 @@ Cost per scan = (Seek_cost + N * Next_cost) / N
 
    证据是：`rocksdb.read.block.get.micros` 在 seek 场景下的 P95 可达 368us，这就是 block cache shard 竞争的代价。一次长扫描有 15-20 次 block 切换，至少命中一次激烈竞争访问的概率会从约 1% 增加到约 15%。
 
-2. **CPU cache 抖动**：扫描 1000 个 key 会访问约 116KB 数据（1000 * 116 bytes），这超过了 Zen 4 的 32KB L1 data cache，并会部分占用 1MB L2。长扫描会把自己之前访问的数据从 L1 挤出去，因此扫描后段更容易落到 L2 延迟（约 3-5ns）而不是 L1（约 1ns）。
+2. **CPU cache 抖动**：扫描 1000 个 key 会触达约 116KB 的 key/value 数据，再加上 data block、index block 和 iterator 元数据，单次扫描的活跃工作集大致在 120-160KB。对 Ryzen 9 9950X 这类 Zen 5 核心来说，这已经明显超过单核 48KB L1 data cache，但通常仍能落在单核 1MB L2 内。因此，长扫描后段更容易从 L1 hit 退化为 L2 hit，增加单步 Next() 的平均成本；不过这更偏向解释平均延迟上升，而不是 100us 级的极端尾延迟。
 
 3. **更容易暴露调度抖动**：一次 1000 key 扫描大约要 20us。在 20us 时间窗内被抢占的概率，大约是 2us 时间窗（10 key 扫描）的 10 倍。Linux 默认的 `sched_min_granularity_ns` 约 3ms，但 250Hz 的 timer interrupt 每 4ms 触发一次，任何一次中断落在扫描过程中都会额外带来 1-5us 延迟。
 
@@ -215,6 +215,9 @@ Cost per scan = (Seek_cost + N * Next_cost) / N
 | 反向 | 518K ops/s | 0.99 us | 2.04 us |
 
 反向扫描的内部 seek 时间在 P50 上快了 3.3 倍，这正是二分查找优势体现的位置。
+
+### 进一步结论
+这组结果更像是 DataBlockIter::PrevImpl() 的“prev cache”带来的cache hit优势，而不是 SeekForPrev() 的起始定位优势。
 
 ---
 
@@ -441,7 +444,6 @@ P95 从 1 线程的 4.47us 跳到 16 线程的 682us，增幅达到 **153 倍**�
 | 16T 扩展只有 85% 效率 | Block cache shard 竞争 + CPU cache bouncing | 中 | 增加 shard 数 |
 | 冷缓存悖论（更低 P50） | OS page cache 提供读取，block cache 反而增加开销 | 信息性 | 对内存内数据集属正常现象 |
 | 长扫描的 P99.99 恶化 7 倍 | 跨 block 边界 + 更容易暴露调度抖动 | 中 | 增大 block size；CPU pinning |
-| 反向扫描快 30-50% | `Prev()` 基于二分查找，`Next()` 更偏顺序扫描 | 信息性 | 可作为应用层优化机会 |
 | MultiGet batch=64 不优于 16 | 拖尾者问题，最慢 key 决定整批延迟 | 中 | batch size 控制在 16-32 |
 | Bloom filter 让 miss 快 3.75 倍 | 完全跳过 index 与 data block 读取 | 信息性 | 说明 bloom filter 配置合理 |
 | 写入压力下吞吐下降 52% | DB mutex 竞争 + memtable flush I/O | 高 | 分离读写路径；增大 `write_buffer_size` |
