@@ -6,6 +6,9 @@ This document provides guidance for generating and reviewing code in the RocksDB
 
 ## General Best Practices
 
+### Answer user's question
+Search the codebase before answer every rocksdb's questions, don't answer instantly.
+
 ### Code Quality and Maintainability
 
 **Clarity and Readability:** Write clear, self-documenting code. Use meaningful variable names, add comments for complex logic, and structure code to minimize cognitive load. Avoid clever tricks that sacrifice readability for marginal performance gains unless absolutely necessary.
