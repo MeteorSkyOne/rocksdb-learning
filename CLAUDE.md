@@ -313,3 +313,6 @@ The following patterns emerged as frequent sources of review feedback:
 ### Formatting code
 * After making change, use `make format-auto` to auto-apply formatting without
     interactive prompts (Claude Code friendly).
+
+### Doc writing
+* put it in the docs/_docs
